@@ -1,7 +1,7 @@
 from distutils.core import setup
 
 setup(
-    name="eu-directives-etl",
+    name="eu_directives_etl",
     version="1.0.0",
     description="ETL script for EU's directives",
     license="MIT",
