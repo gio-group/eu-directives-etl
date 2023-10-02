@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup, Tag
 import pandas as pd
 import re
 
-import schemas
+from . import schemas
 
 
 class ETL:
