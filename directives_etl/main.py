@@ -14,10 +14,11 @@ class ETL:
         "R": ["regulation", "regulamento"],
     }
     CELEX_DIGIT_COUNT = 4
-    CSS_CLASSES_TO_IGNORE = ["signatory", "note"]
+    
+    _CSS_CLASSES_TO_IGNORE = ["signatory", "note"]
 
     # Patterns to identify an isolated marker, i.e., no sentence follows it ============= #
-    ISOLATED_MARKER_PATTERNS = [
+    _ISOLATED_MARKER_PATTERNS = [
         "([0-9]+\.)+$",  # 1.1.
         "([0-9]+\.)+\-[a-z]\.$",  # 1.1.-a.
         "([0-9]+\.)+\-[a-z]\)$",  # 1.1.-a)
@@ -34,7 +35,7 @@ class ETL:
     ]
 
     # Patterns to identify a sentence's starting marker ================================= #
-    STARTING_MARKER_PATTERNS = [
+    _STARTING_MARKER_PATTERNS = [
         "[0-9]+\.[0-9]+\-[a-z]\.",  # 1.2-a.  <sentence>
         "[0-9]+\.[0-9]+\-[a-z]\)",  # 1.2-a)  <sentence>
         "[0-9]+\-[a-z]\.",  # 4-a.  <sentence>
@@ -53,12 +54,12 @@ class ETL:
 
     @property
     def isolated_marker_pattern(self) -> re.Pattern:
-        pattern_ = self._build_patterns_list(ETL.ISOLATED_MARKER_PATTERNS)
+        pattern_ = self._build_patterns_list(ETL._ISOLATED_MARKER_PATTERNS)
         return re.compile(pattern_, flags=re.IGNORECASE)
 
     @property
     def starting_marker_pattern(self) -> re.Pattern:
-        pattern_ = self._build_patterns_list(ETL.STARTING_MARKER_PATTERNS)
+        pattern_ = self._build_patterns_list(ETL._STARTING_MARKER_PATTERNS)
         return re.compile(pattern_, flags=re.IGNORECASE)
 
     def _build_patterns_list(self, patterns_list: list[str]) -> str:
@@ -74,8 +75,8 @@ class ETL:
     @property
     def css_classes_to_ignore(self) -> list[str]:
         return [
-            *ETL.CSS_CLASSES_TO_IGNORE,
-            *[f"oj-{name}" for name in ETL.CSS_CLASSES_TO_IGNORE],
+            *ETL._CSS_CLASSES_TO_IGNORE,
+            *[f"oj-{name}" for name in ETL._CSS_CLASSES_TO_IGNORE],
         ]
 
     def run_routine(self, documents_names: list[str]) -> pd.DataFrame:
