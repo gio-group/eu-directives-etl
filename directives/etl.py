@@ -1,20 +1,48 @@
 from typing import Literal
+import re
 import requests
 from bs4 import BeautifulSoup, Tag
 import pandas as pd
-import re
+from tqdm import tqdm
 
 from . import schemas
 
 
+def extract_documents(documents_names: list[str]) -> pd.DataFrame:
+    """
+    Extracts the EU directives text specified in the `documents_names` from
+    the EUR-Lex website.
+
+    Args:
+        documents_names (list[str]): A list of Directives names to extract.
+
+    Returns:
+        pd.DataFrame: A pandas DataFrame containing the extracted data.
+    """
+    df = ETL().run_routine(documents_names)
+    return df
+
+
 class ETL:
+    """
+    Class responsible for extracting EU directives text from the EUR-Lex website.
+
+    Attributes:
+        BASE_EURLEX_URL (str): The base URL for the EUR-Lex website.
+        DOC_TYPES_DESCRIPTORS (dict): A dictionary mapping the directive and regulation descriptors to their respective keys.
+        CELEX_DIGIT_COUNT (int): The number of digits in the CELEX number.
+        _CSS_CLASSES_TO_IGNORE (list[str]): A list of CSS classes to ignore when parsing the HTML.
+        _ISOLATED_MARKER_PATTERNS (list[str]): A list of patterns to identify an isolated marker.
+        _STARTING_MARKER_PATTERNS (list[str]): A list of patterns to identify a sentence's starting marker.
+    """
+
     BASE_EURLEX_URL = "https://eur-lex.europa.eu/legal-content/PT/TXT/HTML/?uri=CELEX:"
     DOC_TYPES_DESCRIPTORS = {
         "L": ["directive", "diretiva", "directiva"],
         "R": ["regulation", "regulamento"],
     }
     CELEX_DIGIT_COUNT = 4
-    
+
     _CSS_CLASSES_TO_IGNORE = ["signatory", "note"]
 
     # Patterns to identify an isolated marker, i.e., no sentence follows it ============= #
@@ -54,11 +82,26 @@ class ETL:
 
     @property
     def isolated_marker_pattern(self) -> re.Pattern:
+        """
+        Returns a compiled regular expression pattern that matches isolated markers.
+
+        An isolated marker is a marker that appears alone in a line, without any other text.
+
+        Returns:
+            A compiled regular expression pattern that matches isolated markers.
+        """
         pattern_ = self._build_patterns_list(ETL._ISOLATED_MARKER_PATTERNS)
         return re.compile(pattern_, flags=re.IGNORECASE)
 
     @property
     def starting_marker_pattern(self) -> re.Pattern:
+        """
+        Returns a compiled regular expression pattern that matches the starting markers
+        used in the ETL process.
+
+        Returns:
+            A compiled regular expression pattern.
+        """
         pattern_ = self._build_patterns_list(ETL._STARTING_MARKER_PATTERNS)
         return re.compile(pattern_, flags=re.IGNORECASE)
 
@@ -80,19 +123,31 @@ class ETL:
         ]
 
     def run_routine(self, documents_names: list[str]) -> pd.DataFrame:
-        docs_params = self.build_docs_params(documents_names)
+        """
+        Runs the routine to extract the EU directives text specified in the
+        `documents_names` from the EUR-Lex website.
+
+        Args:
+            documents_names (list[str]): A list of Directives names to extract.
+
+        Returns:
+            pd.DataFrame: A pandas DataFrame containing the extracted data.
+        """
+        docs_params = self._build_docs_params(documents_names)
 
         dfs_list = []
-        for i, doc_params in enumerate(docs_params):
-            url = self.build_url(**doc_params)
-            print(url)
+        print("🚀 Starting extraction...\n")
+        for i, doc_params in enumerate(tqdm(docs_params)):
+            url = self._build_url(**doc_params)
 
             response = requests.get(url)
-            assert response.status_code == 200, "The HTTP request failed."
+            assert (
+                response.status_code == 200
+            ), f"The HTTP request failed for {doc_params.doc_type}:{doc_params.doc_year}/{doc_params.doc_number}."
 
             html = BeautifulSoup(response.content.decode(), "html.parser")
             html_passages = html.find_all("p")
-            records = self.parse_html_passages(documents_names[i], html_passages)
+            records = self._parse_html_passages(documents_names[i], html_passages)
 
             df_ = pd.DataFrame(data=records)
             df_ = df_.drop(
@@ -101,13 +156,24 @@ class ETL:
             dfs_list.append(df_)
 
         df = pd.concat(dfs_list)
-        df = df.reset_index(names="doc_id")
-        df = df.reset_index(names="source_id")
+        df = df.reset_index(names="text_doc_id")
+        df = df.reset_index(names="text_id")
+        print("\nExtraction concluded successfully 🎉")
         return df
 
-    def build_docs_params(self, documents: list[str]) -> list[schemas.DocParams]:
+    def _build_docs_params(self, documents_names: list[str]) -> list[schemas.DocParams]:
+        """
+        Builds a list of Directives parameters based on the list of Directive names.
+        It validates the names strings in the process.
+
+        Args:
+            documents_names (list[str]): A list of Directives names.
+
+        Returns:
+            list[schemas.DocParams]: A list of Directives parameters.
+        """
         docs_params = []
-        for doc in documents:
+        for doc in documents_names:
             split_name = doc.split()
             doc_nums = split_name[-1].split("/")
 
@@ -118,7 +184,9 @@ class ETL:
                     doc_type = doc_type_key
                     break
 
-            assert doc_type, "Doc type's alias not found in existing mapping."
+            assert (
+                doc_type
+            ), f"Doc type's alias not found in existing mapping for document '{doc}'"
 
             docs_params.append(
                 dict(
@@ -130,7 +198,7 @@ class ETL:
             )
         return docs_params
 
-    def build_url(
+    def _build_url(
         self,
         doc_year: int,
         doc_number: int,
@@ -147,7 +215,7 @@ class ETL:
             f"{ETL.BASE_EURLEX_URL}{doc_sector}{doc_year}{doc_type}{doc_number_proxy}"
         )
 
-    def parse_html_passages(
+    def _parse_html_passages(
         self, document_name: str, html_passages: list[Tag]
     ) -> list[schemas.Record]:
         # recover_heading = False
@@ -170,6 +238,9 @@ class ETL:
             # For now, simply notify a passage has more than one CSS class.
             # Nonetheless, the conditional ignores additional classes.
             if len(tag["class"]) != 1:
+                print(
+                    f"More than one CSS class found in doc: {document_name} --> passage: {tag.text}"
+                )
                 print(tag["class"])
 
             if tag["class"][0] in self.css_classes_to_ignore:
@@ -178,7 +249,6 @@ class ETL:
             text = tag.text.strip()
             text = re.sub(pattern="(\xa0)+", repl=" ", string=text)
 
-            # if recover_heading and (tag["class"][0].startswith("doc-ti") or tag["class"][0].startswith("oj-doc-ti")):
             if tag["class"][0].startswith("doc-ti") or tag["class"][0].startswith(
                 "oj-doc-ti"
             ):
@@ -188,7 +258,6 @@ class ETL:
                 article_subtitle = ""
                 ref = ""
 
-            # if tag["class"][0] in "oj-ti-section":
             if tag["class"][0].startswith("ti-section") or tag["class"][0].startswith(
                 "oj-ti-section"
             ):
